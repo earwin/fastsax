@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "gofmt needs to be run on:"
+            echo "$out"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go vet (cross-arch)
+        run: |
+          GOARCH=amd64 go vet ./...
+          GOARCH=arm64 go vet ./...
+          GOOS=linux GOARCH=riscv64 go vet ./...
+      - name: go test
+        run: go test -count=1 ./...
+      - name: go test (race)
+        run: go test -race -count=1 .
+      - name: build examples
+        run: go build ./...
+
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: fuzz 30s per target
+        run: |
+          go test -run=^$ -fuzz=^FuzzDifferential$ -fuzztime=30s .
+          go test -run=^$ -fuzz=^FuzzKernels$ -fuzztime=30s .
+          go test -run=^$ -fuzz=^FuzzParallelStage1$ -fuzztime=30s .
